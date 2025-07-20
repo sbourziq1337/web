@@ -1,0 +1,76 @@
+<!-- upload-success.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload Successful</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f0fff4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .card {
+      background: #fff;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+    }
+    .card img {
+      width: 60px;
+      margin-bottom: 20px;
+    }
+    .card h1 {
+      color: #2f855a;
+      font-size: 24px;
+      margin: 10px 0;
+    }
+    .card p {
+      color: #4a5568;
+      font-size: 16px;
+      margin: 10px 0 20px;
+    }
+    .card .info {
+      background: #c6f6d5;
+      color: #22543d;
+      padding: 10px 15px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+    .card .button {
+      background: #38a169;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .card .button:hover {
+      background: #2f855a;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <!-- Optional: use an inline SVG or an image -->
+    <img src="https://cdn-icons-png.flaticon.com/512/845/845646.png" alt="Success Icon" />
+    <h1>Upload Successful!</h1>
+    <p>Your file has been successfully uploaded to our servers.</p>
+    <div class="info">
+      The file is now available in your account and ready to be shared.
+    </div>
+    <a href="/login/upload.html" class="button">Return to Dashboard</a>
+  </div>
+</body>
+</html>

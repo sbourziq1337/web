@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webserver 42 Login & Signup</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f8fafd;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .navbar {
+      background-color: #2563eb;
+      color: white;
+      padding: 1rem 2rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .navbar h1 {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+    .container {
+      margin-top: 5vh;
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+      width: 300px;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+    }
+    label {
+      font-size: 0.85rem;
+      display: block;
+      margin-top: 1rem;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 0.5rem;
+      margin-top: 0.25rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+    }
+    button {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.5rem;
+      background-color: #2563eb;
+      border: none;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    a {
+      display: block;
+      text-align: center;
+      margin-top: 1rem;
+      color: #2563eb;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    .separator {
+      text-align: center;
+      margin: 1.5rem 0;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <h1>Webserver 42</h1>
+    <small>Login / Create Account</small>
+  </div>
+
+  <div class="container">
+    <h2>Login</h2>
+    <!-- ✅ Fix: match the path "/login/index.html" checked in your C++ backend -->
+    <form action="/login" method="POST">
+      <label for="login-username">Username</label>
+      <input type="text" id="login-username" name="username" required />
+
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" name="password" required />
+
+      <button type="submit">Login</button>
+    </form>
+
+    <div class="separator">OR</div>
+
+    <h2>Create Account</h2>
+    <!-- ✅ Fix: match the path "/login/singup.html" checked in your C++ backend -->
+    <form action="singup" method="POST">
+      <label for="signup-username">Username</label>
+      <input type="text" id="signup-username" name="username" required />
+
+      <label for="signup-password">Password</label>
+      <input type="password" id="signup-password" name="password" required />
+
+      <button type="submit">Create Account</button>
+    </form>
+
+    <a href="/index.html">Back to Home</a>
+  </div>
+</body>
+</html>
