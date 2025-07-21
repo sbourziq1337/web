@@ -84,16 +84,15 @@ bool transfer_encoding_chunked(int fd, ChunkedClientInfo &client)
         if (check_body_boundary(client, data))
             return true;
         write_body_to_file(client, data.c_str(), data.size());
-         client.bytes_read += bytes_read;
-         if(client.bytes_read > client.request_obj.server.client_max_body_size)
-         {
-            // we romove file and  reject the request 
+        client.bytes_read += bytes_read;
+        if (client.bytes_read > client.request_obj.server.client_max_body_size)
+        {
+            // we romove file and  reject the request
             std::remove(client.filename.c_str());
             client.upload_state = 2;
             client.request_obj.path = client.request_obj.server.error_pages[413];
             return true;
-
-         }
+        }
         return false;
     }
     else if (bytes_read == 0)
@@ -156,7 +155,7 @@ bool read_body_chunk(int fd, ChunkedClientInfo &client)
         client.is_active = false;
         return false;
     }
-    else if (bytes_read < 0 )
+    else if (bytes_read < 0)
     {
         perror("Read body chunk failed");
         if (client.file_stream.is_open())
@@ -176,14 +175,16 @@ void handle_request_chunked(int fd, ChunkedClientInfo &client, std::vector<Reque
     switch (client.upload_state)
     {
     case 0: // Reading headers
-        if (read_headers_chunked(fd, client , global_obj, hostport_to_indexes, client_server_idx))
-        { 
+        if (read_headers_chunked(fd, client, global_obj, hostport_to_indexes, client_server_idx))
+        {
+            std::cout << "2222========================== : " << client.request_obj.epfd << std::endl;
             if (process_request_headers(client))
             {
                 if (client.upload_state == 2)
                 {
                     send_response(fd, client);
-                    client.is_active = false;
+                    if (client.upload_state != 3)
+                        client.is_active = false;
                 }
             }
             else
@@ -198,10 +199,29 @@ void handle_request_chunked(int fd, ChunkedClientInfo &client, std::vector<Reque
         if (read_body_chunk(fd, client))
         {
             send_response(fd, client);
-            client.is_active = false;
+            if (client.upload_state != 3)
+                client.is_active = false;
+            std::cout << "======> " << client.upload_state << std::endl;
         }
         break;
 
+    case 3:
+        std::cout << "kkkkkkkkk " << std::endl;
+        if (is_cgi_request(client.request_obj.path))
+        {
+            std::cout << "--------------------------------------------- --------- \n";
+            client.last_active = time(NULL);
+            if (!client.request_obj.cgj_path.empty())
+            {
+                handle_cgi_request(client, fd, client.parsed_headers);
+                return;
+            }
+        }
+        else
+        {
+            client.is_active = false;
+            break;
+        }
     case 2: // Done
         client.is_active = false;
         break;

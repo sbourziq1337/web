@@ -171,6 +171,8 @@ int main()
         return 1;
     }
 
+    std::cout << "11========================== : " << epfd <<std::endl;
+
     // Add all server sockets to epoll
     for (size_t i = 0; i < servers.size(); ++i)
     {
@@ -238,6 +240,7 @@ int main()
                     if (client_server_idx < global_obj.size())
                     {
                         global_obj[client_server_idx].fd_client = fd;
+                        client_it->second.request_obj.epfd = epfd;
                         // handle_request_chunked(fd, client_it->second, global_obj[client_server_idx]);
                         handle_request_chunked(fd, client_it->second, global_obj,
                                                hostport_to_indexes, client_server_idx);

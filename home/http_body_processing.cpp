@@ -283,7 +283,6 @@ void send_response(int fd, ChunkedClientInfo &client)
 {
     if (is_cgi_request(client.request_obj.path))
     {
-
         std::string index_path = client.request_obj.uri;
         bool found = false;
         // For POST requests, make sure body data is available
@@ -304,12 +303,14 @@ void send_response(int fd, ChunkedClientInfo &client)
             if (found == true || index_path == "/")
                 break;
         }
+        client.upload_state = 3;
+        return;
 
-        if (!client.request_obj.cgj_path.empty())
-        {
-            handle_cgi_request(client, fd, client.parsed_headers);
-            return;
-        }
+        // if (!client.request_obj.cgj_path.empty())
+        // {
+        //     handle_cgi_request(client, fd, client.parsed_headers);
+        //     return;
+        // }
     }
     if (client.request_obj.mthod == "content_length")
     {

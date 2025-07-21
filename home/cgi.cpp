@@ -90,6 +90,9 @@ int read_with_timeout_select(int fd, char *buffer, size_t buffer_size, int timeo
 void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std::string, std::string> &headers)
 {
     // Set server_config after we know it's valid
+    static int number = 0;
+    number++;
+    std::cout << "======= ============== >> " << number << std::endl ;
     client.request_obj.server_config = &client.request_obj.server;
 
     std::string script_path = client.request_obj.path;
