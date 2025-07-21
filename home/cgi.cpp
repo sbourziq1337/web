@@ -3,7 +3,16 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <sstream>
-#include <cstring> // For strerror
+#include <cstring>
+#include <signal.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <functional>
+
+// CGI timeout in seconds
+#define CGI_TIMEOUT 10
 
 bool is_cgi_request(const std::string &path)
 {
@@ -29,18 +38,58 @@ std::string int_to_string(int n)
     return ss.str();
 }
 
+// Helper function to check if process is still running
+bool is_process_running(pid_t pid)
+{
+    int status;
+    pid_t result = waitpid(pid, &status, WNOHANG);
+    return (result == 0); // 0 means process is still running
+}
+
+// Helper function to get elapsed time in seconds using time_t
+long get_elapsed_seconds(const time_t &start_time)
+{
+    time_t current_time = time(NULL);
+    return (long)(current_time - start_time);
+}
+
+// Simple read with timeout check
+int read_with_timeout_select(int fd, char *buffer, size_t buffer_size, int timeout_sec,
+                             const time_t &start_time, std::string &accumulated_output)
+{
+    long elapsed = get_elapsed_seconds(start_time);
+    if (elapsed >= timeout_sec)
+    {
+        return -1; // Timeout
+    }
+
+    // Try a non-blocking read
+    ssize_t bytes_read = read(fd, buffer, buffer_size - 1);
+
+    if (bytes_read > 0)
+    {
+        buffer[bytes_read] = '\0';
+        accumulated_output += std::string(buffer, bytes_read);
+        return bytes_read;
+    }
+    else if (bytes_read == 0)
+    {
+        return 0; // EOF
+    }
+    else if (bytes_read == -1)
+    {
+        // For non-blocking I/O, assume it's just no data available
+        return -2; // Try again
+    }
+
+    return -1; // Should not reach here
+}
+
+// Alternative implementation using poll
+
 void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std::string, std::string> &headers)
 {
-    // if (client.request_obj.server_configs.empty())
-    // {
-    //     std::cout << ""
-    //     std::cerr << "Error: Invalid server configuration - struct_data is empty" << std::endl;
-    //     std::string error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>500 Internal Server Error</h1>";
-    //     send(new_socket, error_response.c_str(), error_response.length(), 0);
-    //     return;
-    // }
-
-    // Set server_config after we know struct_data is not empty
+    // Set server_config after we know it's valid
     client.request_obj.server_config = &client.request_obj.server;
 
     std::string script_path = client.request_obj.path;
@@ -50,13 +99,14 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
         std::cout << "Warning: Script is not executable: " << client.request_obj.cgj_path << std::endl;
     }
 
+    // Prepare environment variables
     std::vector<std::string> env_strings;
     env_strings.push_back("REQUEST_METHOD=" + client.request_obj.mthod);
     env_strings.push_back("SERVER_PROTOCOL=HTTP/1.1");
     env_strings.push_back("GATEWAY_INTERFACE=CGI/1.1");
     env_strings.push_back("REQUEST_URI=" + client.request_obj.uri);
-    env_strings.push_back("PATH_INFO=" + client.request_obj.uri);       // Use full path as PATH_INFO
-    env_strings.push_back("SCRIPT_NAME=" + script_path); // Add SCRIPT_NAME for CGI compatibility
+    env_strings.push_back("PATH_INFO=" + client.request_obj.uri);
+    env_strings.push_back("SCRIPT_NAME=" + script_path);
 
     // Add server information
     if (client.request_obj.server_config)
@@ -65,7 +115,7 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
         env_strings.push_back("SERVER_PORT=" + int_to_string(client.request_obj.server_config->port));
     }
 
-    if (client.request_obj.mthod == "POST" && !client.request_obj.info_body.empty())
+    if (client.request_obj.mthod == "POST")
     {
         env_strings.push_back("CONTENT_LENGTH=" + int_to_string(client.request_obj.info_body.length()));
         if (headers.find("Content-Type") != headers.end())
@@ -73,11 +123,14 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
         else
             env_strings.push_back("CONTENT_TYPE=application/x-www-form-urlencoded");
     }
+
+    // Convert to char* array for execve
     std::vector<char *> envp;
     for (size_t i = 0; i < env_strings.size(); ++i)
         envp.push_back(const_cast<char *>(env_strings[i].c_str()));
     envp.push_back(NULL);
 
+    // Create pipes
     int pipefd[2], stdin_pipe[2];
     if (pipe(pipefd) == -1 || pipe(stdin_pipe) == -1)
     {
@@ -87,65 +140,181 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
         return;
     }
 
+    // Fork process
     pid_t pid = fork();
     if (pid == 0)
     {
+        // Child process
         close(pipefd[0]);
         close(stdin_pipe[1]);
+
+        // Redirect stdout and stderr to pipe
         dup2(pipefd[1], STDOUT_FILENO);
         dup2(pipefd[1], STDERR_FILENO);
-
-        // int fd = std::ifstream(client.filename);
         dup2(stdin_pipe[0], STDIN_FILENO);
+
         close(pipefd[1]);
         close(stdin_pipe[0]);
-        std::string script_dir = script_path.substr(0, script_path.find_last_of('/'));
-        // std::cout << "Debug - script_path: " << script_dir << std::endl;
 
+        // Change to script directory
+        std::string script_dir = script_path.substr(0, script_path.find_last_of('/'));
         if (chdir(script_dir.c_str()) != 0)
         {
             perror("Failed to change directory");
             exit(1);
         }
 
-        // Fix: Use the actual script path, not duplicated path
+        // Prepare arguments
         std::string actual_script = script_path.substr(script_path.find_last_of('/') + 1);
-
         char *args[3];
         args[0] = const_cast<char *>(client.request_obj.cgj_path.c_str());
-        args[1] = const_cast<char *>(actual_script.c_str()); // Use just filename after chdir
+        args[1] = const_cast<char *>(actual_script.c_str());
         args[2] = NULL;
 
+        // Execute CGI script
         execve(client.request_obj.cgj_path.c_str(), args, &envp[0]);
         perror("execve failed");
         exit(1);
     }
     else if (pid > 0)
     {
+        // Parent process
         close(pipefd[1]);
         close(stdin_pipe[0]);
 
-        // For chunked requests, the server should have already unchunked the data
-        // before calling this CGI handler. The CGI expects EOF as end of body.
-        if (client.request_obj.mthod == "POST" && !client.request_obj.info_body.empty())
+        struct epoll_event ev;
+        ev.events = EPOLLIN;
+        // Handle POST data
+        if (client.request_obj.mthod == "POST")
         {
-            std::cout << "body == " << client.request_obj.info_body << std::endl;
-            write(stdin_pipe[1], client.request_obj.info_body.c_str(), client.request_obj.info_body.length());
-        }
-        close(stdin_pipe[1]); // Close stdin to signal EOF to CGI
+            // Set stdin pipe to non-blocking mode]
+            int flags = fcntl(stdin_pipe[1], F_GETFL, 0);
+            fcntl(stdin_pipe[1], F_SETFL, flags | O_NONBLOCK);
+            epoll_ctl(client.request_obj.epfd, EPOLL_CTL_ADD, flags, &ev);
 
+            // Write CGI headers if available
+            if (!client.cgi_headrs.empty())
+            {
+                ssize_t written = write(stdin_pipe[1], client.cgi_headrs.c_str(), client.cgi_headrs.size());
+                if (written == -1)
+                {
+                    perror("Failed to write CGI headers");
+                }
+            }
+
+            // Write body data
+            if (!client.request_obj.info_body.empty())
+            {
+                ssize_t written = write(stdin_pipe[1], client.request_obj.info_body.c_str(), client.request_obj.info_body.length());
+                if (written == -1)
+                {
+                    perror("Failed to write body data");
+                }
+            }
+            else if (!client.filename.empty())
+            {
+                // Fallback: read from file if info_body is empty
+                std::ifstream cgi_body(client.filename.c_str(), std::ios::binary);
+                if (cgi_body.is_open())
+                {
+                    cgi_body.seekg(0, std::ios::end);
+                    std::streamsize file_size = cgi_body.tellg();
+                    cgi_body.seekg(0, std::ios::beg);
+
+                    if (file_size > 0)
+                    {
+
+                        std::string file_content(file_size, '\0');
+                        cgi_body.read(&file_content[0], file_size);
+                        ssize_t written = write(stdin_pipe[1], file_content.c_str(), file_size);
+                        if (written == -1)
+                        {
+                            perror("Failed to write file content");
+                        }
+                    }
+                    cgi_body.close();
+                }
+                unlink(client.filename.c_str());
+            }
+        }
+        close(stdin_pipe[1]); // Close stdin to signal EOF
+
+        // Set pipe to non-blocking mode
+        fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
+        epoll_ctl(client.request_obj.epfd, EPOLL_CTL_ADD, pipefd[0], &ev);
+
+        // Read CGI output with timeout - NO WHILE LOOPS
         std::string cgi_output;
-        char buffer[CHUNK_SIZE];
-        ssize_t bytes_read;
-        while ((bytes_read = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0)
+        char buffer[4096];
+        time_t start_time;
+        start_time = time(NULL);
+
+        // Use recursive approach or state machine instead of while loop
+        // Classic non-blocking loop for C++98 compatibility
+        bool finished = false;
+        bool timeout_occurred = false;
+        while (!finished && !timeout_occurred)
         {
-            buffer[bytes_read] = '\0';
-            cgi_output.append(buffer, bytes_read);
+            int read_result = read_with_timeout_select(pipefd[0], buffer, sizeof(buffer), CGI_TIMEOUT, start_time, cgi_output);
+            if (read_result > 0)
+            {
+                // Data read, continue
+            }
+            else if (read_result == 0)
+            {
+                // EOF
+                finished = true;
+            }
+            else if (read_result == -2)
+            {
+                // No data available, check timeout and process status
+                if (get_elapsed_seconds(start_time) >= CGI_TIMEOUT)
+                {
+                    timeout_occurred = true;
+                }
+                else if (!is_process_running(pid))
+                {
+                    // Process finished, try one more read then finish
+                    usleep(100000); // 100ms delay
+                    read_result = read_with_timeout_select(pipefd[0], buffer, sizeof(buffer), CGI_TIMEOUT, start_time, cgi_output);
+                    if (read_result <= 0)
+                    {
+                        finished = true;
+                    }
+                }
+                else
+                {
+                    // Just wait a bit
+                    usleep(50000); // 50ms
+                }
+            }
+            else
+            {
+                // Error or timeout
+                timeout_occurred = true;
+            }
         }
         close(pipefd[0]);
-        int status;
-        waitpid(pid, &status, 0);
+        // Handle timeout
+        if (timeout_occurred)
+        {
+            std::cerr << "CGI script timeout after " << CGI_TIMEOUT << " seconds" << std::endl;
+            kill(pid, SIGKILL);
+            int status;
+            waitpid(pid, &status, 0);
+            std::string error_response = "HTTP/1.1 504 Gateway Timeout\r\nContent-Type: text/html\r\n\r\n<h1>504 Gateway Timeout</h1><p>CGI script exceeded " + int_to_string(CGI_TIMEOUT) + " second timeout</p>";
+            send(new_socket, error_response.c_str(), error_response.length(), 0);
+            return;
+        }
 
+        // Wait for process to finish if it hasn't already
+        if (is_process_running(pid))
+        {
+            int status;
+            waitpid(pid, &status, 0);
+        }
+
+        // Process CGI output
         std::string response;
         size_t header_end = cgi_output.find("\r\n\r\n");
         bool has_proper_headers = false;
@@ -188,7 +357,6 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
         }
 
         // If no proper headers found, treat entire output as body content
-        // Don't add Content-Length if CGI didn't provide it - EOF marks the end
         if (!has_proper_headers || response.empty())
         {
             response = "HTTP/1.1 200 OK\r\n";
@@ -200,6 +368,7 @@ void handle_cgi_request(ChunkedClientInfo &client, int new_socket, std::map<std:
     }
     else
     {
+        // Fork failed
         perror("fork failed");
         close(pipefd[0]);
         close(pipefd[1]);

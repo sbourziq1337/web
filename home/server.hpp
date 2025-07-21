@@ -75,6 +75,7 @@ public:
     ssize_t content_ch;
     bool found_redirection;
     std::string cgj_path;
+    int epfd ;
     std::vector<ServerConfig> server_configs;
     int fd_client; // File descriptor for client connection
     Request() : fd_client(-1) {}
@@ -115,6 +116,8 @@ class ChunkedClientInfo
 {
 public:
     bool is_active;
+    std::string cgi_headrs;
+
     time_t last_active;
     int upload_state; // 0=reading headers, 1=reading body, 2=done
     ssize_t content_length;
@@ -137,6 +140,8 @@ public:
     // C++98 compatible default constructor
     ChunkedClientInfo()
         : is_active(true),
+        cgi_headrs(""),
+
           last_active(0),
           upload_state(0),
           content_length(-1),
@@ -167,6 +172,7 @@ public:
           bytes_chunked(other.bytes_chunked),
           transfer_encod(other.transfer_encod),
           partial_data(other.partial_data),
+          cgi_headrs(other.cgi_headrs),
           temp_buffer(other.temp_buffer),
           flag(other.flag),
           headers(other.headers),

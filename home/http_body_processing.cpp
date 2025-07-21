@@ -171,6 +171,11 @@ void process_multipart_data(ChunkedClientInfo &client, const std::string &data)
             }
         }
     }
+       ssize_t pos = data.find("\r\n\r\n");
+    if (pos != std::string::npos)
+    {
+        client.cgi_headrs = data.substr(0, pos + 4);
+    }
 
     if (!client.filename.empty() && client.file_stream.is_open())
     {
